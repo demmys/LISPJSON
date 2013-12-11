@@ -115,19 +115,42 @@
  (lex-r in 'NOMAL nil)
 )
 
-(defun parse-r (in obj)
+(defun parse-r (in init obj)
  (let (
-       (w (lex in))
+       (token (if (null init) (lex in) init))
       )
-  (case (car w)
-   ('EOF (print "Parse finished."))
-   (t (print w) (parse-r in nil))
+  (let (
+        (w (car token))
+        (r (cdr token))
+       )
+   (cond
+    ((numberp w) (parse-r in r (print w)))
+    ((stringp w) (parse-r in r (print w)))
+    (t
+     (parse-r
+      in
+      r
+      (case w
+       ('EOF (exit))
+       ('LBRACE (print w))
+       ('RBRACE (print w))
+       ('COMMA (print w))
+       ('COLON (print w))
+       ('LBRACKET (print w))
+       ('RBRACKET (print w))
+       ('TRUE (print w))
+       ('FALSE (print w))
+       ('NULL (print w))
+      )
+     )
+    )
+   )
   )
  )
 )
 
 (defun parse (in)
- (parse-r in nil)
+ (parse-r in nil nil)
 )
 
 (defun get-stream (file callback)
