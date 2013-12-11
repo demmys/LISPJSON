@@ -1,69 +1,66 @@
-(defun get-stream (file callback)
- (if (null file)
-  (funcall callback *standard-input*)
-  (with-open-file (in file :direction :input)
-   (funcall callback in)
-  )
- )
-)
-
 (defun lex-r (in state stack)
  (let (
        (c (read-char in nil 'EOF))
       )
   (if (equal c 'EOF)
-   'EOF
+   (list 'EOF)
    (case state
 
     ('NOMAL
-     (cond
-      ((equal c #\{) 'LBRACE)
-      ((equal c #\}) 'RBRACE)
-      ((equal c #\,) 'COMMA)
-      ((equal c #\:) 'COLON)
-      ((equal c #\[) 'LBRACKET)
-      ((equal c #\]) 'RBRACKET)
-      ((equal c #\") (lex-r in 'STRING nil))
-      ((equal c #\-) (lex-r in 'MINUS 0))
-      ((digit-char-p c) (lex-r in 'NUMBER (digit-char-p c)))
-      ((equal c #\t)
-       (if (equal (lex-r in 'WORD (list #\t)) "true")
-        'TRUE
-        (error "Lexical analyze error: illigal word" )
+     (if (digit-char-p c)
+      (lex-r in 'NUMBER (digit-char-p c))
+      (case c
+       (#\{ (list 'LBRACE))
+       (#\} (list 'RBRACE))
+       (#\, (list 'COMMA))
+       (#\: (list 'COLON))
+       (#\[ (list 'LBRACKET))
+       (#\] (list 'RBRACKET))
+       (#\" (lex-r in 'STRING nil))
+       (#\- (lex-r in 'MINUS 0))
+       ((#\t #\f #\n)
+        (let (
+              (analyzed (lex-r in 'WORD (list c)))
+              (token
+               (case c
+                (#\t (list "true" 'TRUE))
+                (#\f (list "false" 'FALSE))
+                (#\n (list "null" 'NULL))
+               )
+             )
+            )
+         (if (equal (car analyzed) (car token))
+          (append (cdr token) (cdr analyzed))
+          (error "Lexical analyze error: illigal word ~S" analyzed)
+         )
+        )
        )
-      )
-      ((equal c #\f)
-       (if (equal (lex-r in 'WORD (list #\f)) "false")
-        'FALSE
-        (error "Lexical analyze error: illigal word" )
-       )
-      )
-      ((equal c #\n)
-       (if (equal (lex-r in 'WORD (list #\n)) "null")
-        'NULL
-        (error "Lexical analyze error: illigal word" )
-       )
-      )
-      (t
-       (case c
-        ((#\Space #\Linefeed) (lex-r in state stack))
-        (t (error "Lexical analyze error: illigal character ~C" c))
-       )
-      )
+       ((#\Space #\Linefeed) (lex-r in state stack))
+       (t (error "Lexical analyze error: illigal character ~C" c))
+     )
      )
     )
 
     ('WORD
      (case c
-      ;TODO cannot end with } ] ,
-      ((#\Space #\Linefeed) (concatenate 'STRING (reverse stack)))
+      ((#\Space #\Linefeed) (list (concatenate 'STRING (reverse stack))))
+      ((#\} #\] #\,)
+       (list
+        (concatenate 'STRING (reverse stack))
+        (case c
+         (#\} 'RBRACE)
+         (#\] 'RBRACKET)
+         (#\, 'COMMA)
+        )
+       )
+      )
       (t (lex-r in 'WORD (cons c stack)))
      )
     )
 
     ('STRING
      (case c
-      (#\" (concatenate 'STRING (reverse stack)))
+      (#\" (list (concatenate 'STRING (reverse stack))))
       (#\\ (lex-r in 'ESCCHAR stack))
       (t (lex-r in state (cons c stack)))
      )
@@ -81,8 +78,17 @@
      (if (digit-char-p c)
       (lex-r in state (+ (* stack 10) (digit-char-p c)))
       (case c
-       ;TODO cannot end with } ] ,
-       ((#\Space #\Linefeed) stack)
+       ((#\Space #\Linefeed) (list stack))
+       ((#\} #\] #\,)
+        (list
+         stack
+         (case c
+          (#\} 'RBRACE)
+          (#\] 'RBRACKET)
+          (#\, 'COMMA)
+         )
+        )
+       )
        ;TODO should analyze float and exp
        (t (error "Lexical analyze error: illigal number ~C" c))
       )
@@ -91,13 +97,12 @@
 
     ('MINUS
      (if (digit-char-p c)
-      (lex-r in state (+ (* stack 10) (digit-char-p c)))
-      (case c
-       ;TODO cannot end with } ] ,
-       ((#\Space #\Linefeed) (- stack))
-       ;TODO should analyze float and exp
-       (t (error "Lexical analyze error: illigal number ~C" c))
+      (let (
+            (analyzed (lex-r in 'NUMBER (digit-char-p c)))
+           )
+       (cons (- (car analyzed)) (cdr analyzed))
       )
+      (error "Lexical analyze error: illigal number ~C" c)
      )
     )
 
@@ -114,7 +119,7 @@
  (let (
        (w (lex in))
       )
-  (case w
+  (case (car w)
    ('EOF (print "Parse finished."))
    (t (print w) (parse-r in nil))
   )
@@ -123,6 +128,15 @@
 
 (defun parse (in)
  (parse-r in nil)
+)
+
+(defun get-stream (file callback)
+ (if (null file)
+  (funcall callback *standard-input*)
+  (with-open-file (in file :direction :input)
+   (funcall callback in)
+  )
+ )
 )
 
 (defun main ()
