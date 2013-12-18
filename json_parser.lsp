@@ -1,4 +1,9 @@
-(defun lex-r (in state stack)
+#|
+ |
+ | Lexical Analyzer
+ |
+ |#
+(defun json-lex-r (in state stack)
  (let (
        (c (read-char in nil 'EOF))
       )
@@ -8,7 +13,7 @@
 
     ('NOMAL
      (if (digit-char-p c)
-      (lex-r in 'NUMBER (digit-char-p c))
+      (json-lex-r in 'NUMBER (digit-char-p c))
       (case c
        (#\{ (list 'LBRACE))
        (#\} (list 'RBRACE))
@@ -16,11 +21,11 @@
        (#\: (list 'COLON))
        (#\[ (list 'LBRACKET))
        (#\] (list 'RBRACKET))
-       (#\" (lex-r in 'STRING nil))
-       (#\- (lex-r in 'MINUS 0))
+       (#\" (json-lex-r in 'STRING nil))
+       (#\- (json-lex-r in 'MINUS 0))
        ((#\t #\f #\n)
         (let (
-              (analyzed (lex-r in 'WORD (list c)))
+              (analyzed (json-lex-r in 'WORD (list c)))
               (token
                (case c
                 (#\t (list "true" 'TRUE))
@@ -35,7 +40,7 @@
          )
         )
        )
-       ((#\Space #\Linefeed) (lex-r in state stack))
+       ((#\Space #\Linefeed) (json-lex-r in state stack))
        (t (error "Lexical analyze error: illigal character ~C" c))
      )
      )
@@ -54,21 +59,21 @@
         )
        )
       )
-      (t (lex-r in 'WORD (cons c stack)))
+      (t (json-lex-r in 'WORD (cons c stack)))
      )
     )
 
     ('STRING
      (case c
       (#\" (list (concatenate 'STRING (reverse stack))))
-      (#\\ (lex-r in 'ESCCHAR stack))
-      (t (lex-r in state (cons c stack)))
+      (#\\ (json-lex-r in 'ESCCHAR stack))
+      (t (json-lex-r in state (cons c stack)))
      )
     )
 
     ('ESCCHAR
      (case c
-      ((#\" #\\ #\/) (lex-r in 'STRING (cons c stack)))
+      ((#\" #\\ #\/) (json-lex-r in 'STRING (cons c stack)))
       ;TODO should analyze \b \f \n \r \t \uXXXX
       (t (error "Lexical analyze error: illigal escape character \\~C" c))
      )
@@ -76,7 +81,7 @@
 
     ('NUMBER
      (if (digit-char-p c)
-      (lex-r in state (+ (* stack 10) (digit-char-p c)))
+      (json-lex-r in state (+ (* stack 10) (digit-char-p c)))
       (case c
        ((#\Space #\Linefeed) (list stack))
        ((#\} #\] #\,)
@@ -98,7 +103,7 @@
     ('MINUS
      (if (digit-char-p c)
       (let (
-            (analyzed (lex-r in 'NUMBER (digit-char-p c)))
+            (analyzed (json-lex-r in 'NUMBER (digit-char-p c)))
            )
        (cons (- (car analyzed)) (cdr analyzed))
       )
@@ -111,23 +116,72 @@
  )
 )
 
-(defun lex (in)
- (lex-r in 'NOMAL nil)
+(defun json-lex (in)
+ (json-lex-r in 'NOMAL nil)
 )
 
-(defun parse-r (in init obj)
+
+
+#|
+ |
+ | JSON
+ |
+ |#
+(defun json-object ()
+ (list 'OBJECT)
+)
+(defun json-object-append (jobj key val)
+ (cons 'OBJECT (acons key val (cdr jobj)))
+)
+
+(defun json-array ()
+ (list 'ARRAY)
+)
+(defun json-array-append (jary val)
+ (cons 'ARRAY (cons val (cdr jobj)))
+)
+
+(defun json-number (n)
+ (list 'NUMBER n)
+)
+
+(defun json-string (s)
+ (list 'STRING s)
+)
+
+(defun json-const (kind)
+ (list kind)
+)
+
+
+
+#|
+ |
+ | Parser
+ |
+ |#
+(defun json-append (json key_val val_nil)
+ (case (car json)
+  ('OBJECT (json-object-append json key_val val_nil))
+  ('ARRAY (json-array-append json key_val))
+  ; TODO statement of error
+  (t (error "Parse error: "))
+ )
+)
+
+(defun json-parse-r (in init res)
  (let (
-       (token (if (null init) (lex in) init))
+       (token (if (null init) (json-lex in) init))
       )
   (let (
         (w (car token))
         (r (cdr token))
        )
    (cond
-    ((numberp w) (parse-r in r (print w)))
-    ((stringp w) (parse-r in r (print w)))
+    ((numberp w) (json-parse-r in r (print w)))
+    ((stringp w) (json-parse-r in r (print w)))
     (t
-     (parse-r
+     (json-parse-r
       in
       r
       (case w
@@ -149,10 +203,17 @@
  )
 )
 
-(defun parse (in)
- (parse-r in nil nil)
+(defun json-parse (in)
+ (json-parse-r in nil nil)
 )
 
+
+
+#|
+ |
+ | Stream selector
+ |
+ |#
 (defun get-stream (file callback)
  (if (null file)
   (funcall callback *standard-input*)
@@ -162,10 +223,17 @@
  )
 )
 
+
+
+#|
+ |
+ | Main
+ |
+ |#
 (defun main ()
  (get-stream
   (car *args*)
-  #'parse
+  #'json-parse
  )
 )
 
