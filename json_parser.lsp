@@ -9,7 +9,7 @@
       )
   (case state
 
-   ('INITIAL
+   (INITIAL
     (if (equal c 'EOF)
      (list 'EOF)
      (if (digit-char-p c)
@@ -47,7 +47,7 @@
     )
    )
 
-   ('WORD
+   (WORD
     (case c
      ((#\Space #\Linefeed) (list (concatenate 'STRING (reverse stack))))
      ((EOF #\} #\] #\,)
@@ -65,7 +65,7 @@
     )
    )
 
-   ('STRING
+   (STRING
     (case c
      (#\" (list (concatenate 'STRING (reverse stack))))
      (#\\ (json-lex-r in 'ESCCHAR stack))
@@ -74,7 +74,7 @@
     )
    )
 
-   ('ESCCHAR
+   (ESCCHAR
     (case c
      ((#\" #\\ #\/) (json-lex-r in 'STRING (cons c stack)))
      ;TODO should analyze \b \f \n \r \t \uXXXX
@@ -82,7 +82,7 @@
     )
    )
 
-   ('NUMBER
+   (NUMBER
     (if (equal c 'EOF)
      (list stack 'EOF)
      (if (digit-char-p c)
@@ -106,7 +106,7 @@
     )
    )
 
-   ('MINUS
+   (MINUS
     (if (digit-char-p c)
      (let (
            (analyzed (json-lex-r in 'NUMBER (digit-char-p c)))
@@ -167,8 +167,8 @@
  |#
 (defun json-append (json key_val val_nil)
  (case (car json)
-  ('OBJECT (json-object-append json key_val val_nil))
-  ('ARRAY (json-array-append json key_val))
+  (OBJECT (json-object-append json key_val val_nil))
+  (ARRAY (json-array-append json key_val))
   ; TODO statement of error
   (t (error "Parse error: "))
  )
@@ -184,20 +184,20 @@
        )
    (case state
 
-    ('INITIAL
+    (INITIAL
      (cond
       ((numberp w) (json-parse-r in 'END r w))
       ((stringp w) (json-parse-r in 'END r w))
       (t (case w
-          ('TRUE (json-parse-r in 'END r w))
-          ('FALSE (json-parse-r in 'END r w))
-          ('NULL (json-parse-r in 'END r w))
+          (TRUE (json-parse-r in 'END r w))
+          (FALSE (json-parse-r in 'END r w))
+          (NULL (json-parse-r in 'END r w))
          )
       )
      )
     )
 
-    ('END
+    (END
      (if (equal w 'EOF)
       res
       (error "Parse error: illegal sequence of value in top level.")
