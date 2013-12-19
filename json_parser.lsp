@@ -7,11 +7,11 @@
  (let (
        (c (read-char in nil 'EOF))
       )
-  (if (equal c 'EOF)
-   (list 'EOF)
-   (case state
+  (case state
 
-    ('NOMAL
+   ('INITIAL
+    (if (equal c 'EOF)
+     (list 'EOF)
      (if (digit-char-p c)
       (json-lex-r in 'NUMBER (digit-char-p c))
       (case c
@@ -36,50 +36,55 @@
             )
          (if (equal (car analyzed) (car token))
           (append (cdr token) (cdr analyzed))
-          (error "Lexical analyze error: illigal word ~S" analyzed)
+          (error "Lexical analyze error: illegal word ~S" analyzed)
          )
         )
        )
        ((#\Space #\Linefeed) (json-lex-r in state stack))
-       (t (error "Lexical analyze error: illigal character ~C" c))
-     )
+       (t (error "Lexical analyze error: illegal character ~C" c))
+      )
      )
     )
+   )
 
-    ('WORD
-     (case c
-      ((#\Space #\Linefeed) (list (concatenate 'STRING (reverse stack))))
-      ((#\} #\] #\,)
-       (list
-        (concatenate 'STRING (reverse stack))
-        (case c
-         (#\} 'RBRACE)
-         (#\] 'RBRACKET)
-         (#\, 'COMMA)
-        )
+   ('WORD
+    (case c
+     ((#\Space #\Linefeed) (list (concatenate 'STRING (reverse stack))))
+     ((EOF #\} #\] #\,)
+      (list
+       (concatenate 'STRING (reverse stack))
+       (case c
+        (EOF 'EOF)
+        (#\} 'RBRACE)
+        (#\] 'RBRACKET)
+        (#\, 'COMMA)
        )
       )
-      (t (json-lex-r in 'WORD (cons c stack)))
      )
+     (t (json-lex-r in 'WORD (cons c stack)))
     )
+   )
 
-    ('STRING
-     (case c
-      (#\" (list (concatenate 'STRING (reverse stack))))
-      (#\\ (json-lex-r in 'ESCCHAR stack))
-      (t (json-lex-r in state (cons c stack)))
-     )
+   ('STRING
+    (case c
+     (#\" (list (concatenate 'STRING (reverse stack))))
+     (#\\ (json-lex-r in 'ESCCHAR stack))
+     (EOF (error "Ends within string."))
+     (t (json-lex-r in state (cons c stack)))
     )
+   )
 
-    ('ESCCHAR
-     (case c
-      ((#\" #\\ #\/) (json-lex-r in 'STRING (cons c stack)))
-      ;TODO should analyze \b \f \n \r \t \uXXXX
-      (t (error "Lexical analyze error: illigal escape character \\~C" c))
-     )
+   ('ESCCHAR
+    (case c
+     ((#\" #\\ #\/) (json-lex-r in 'STRING (cons c stack)))
+     ;TODO should analyze \b \f \n \r \t \uXXXX
+     (t (error "Lexical analyze error: illegal escape character \\~C" c))
     )
+   )
 
-    ('NUMBER
+   ('NUMBER
+    (if (equal c 'EOF)
+     (list stack 'EOF)
      (if (digit-char-p c)
       (json-lex-r in state (+ (* stack 10) (digit-char-p c)))
       (case c
@@ -95,29 +100,29 @@
         )
        )
        ;TODO should analyze float and exp
-       (t (error "Lexical analyze error: illigal number ~C" c))
+       (t (error "Lexical analyze error: illegal number ~C" c))
       )
      )
     )
-
-    ('MINUS
-     (if (digit-char-p c)
-      (let (
-            (analyzed (json-lex-r in 'NUMBER (digit-char-p c)))
-           )
-       (cons (- (car analyzed)) (cdr analyzed))
-      )
-      (error "Lexical analyze error: illigal number ~C" c)
-     )
-    )
-
    )
+
+   ('MINUS
+    (if (digit-char-p c)
+     (let (
+           (analyzed (json-lex-r in 'NUMBER (digit-char-p c)))
+          )
+      (cons (- (car analyzed)) (cdr analyzed))
+     )
+     (error "Lexical analyze error: illegal number ~C" c)
+    )
+   )
+
   )
  )
 )
 
 (defun json-lex (in)
- (json-lex-r in 'NOMAL nil)
+ (json-lex-r in 'INITIAL nil)
 )
 
 
@@ -169,7 +174,7 @@
  )
 )
 
-(defun json-parse-r (in init res)
+(defun json-parse-r (in state init res)
  (let (
        (token (if (null init) (json-lex in) init))
       )
@@ -177,34 +182,35 @@
         (w (car token))
         (r (cdr token))
        )
-   (cond
-    ((numberp w) (json-parse-r in r (print w)))
-    ((stringp w) (json-parse-r in r (print w)))
-    (t
-     (json-parse-r
-      in
-      r
-      (case w
-       ('EOF (exit))
-       ('LBRACE (print w))
-       ('RBRACE (print w))
-       ('COMMA (print w))
-       ('COLON (print w))
-       ('LBRACKET (print w))
-       ('RBRACKET (print w))
-       ('TRUE (print w))
-       ('FALSE (print w))
-       ('NULL (print w))
+   (case state
+
+    ('INITIAL
+     (cond
+      ((numberp w) (json-parse-r in 'END r w))
+      ((stringp w) (json-parse-r in 'END r w))
+      (t (case w
+          ('TRUE (json-parse-r in 'END r w))
+          ('FALSE (json-parse-r in 'END r w))
+          ('NULL (json-parse-r in 'END r w))
+         )
       )
      )
     )
+
+    ('END
+     (if (equal w 'EOF)
+      res
+      (error "Parse error: illegal sequence of value in top level.")
+     )
+    )
+
    )
   )
  )
 )
 
 (defun json-parse (in)
- (json-parse-r in nil nil)
+ (json-parse-r in 'INITIAL nil nil)
 )
 
 
@@ -231,9 +237,11 @@
  |
  |#
 (defun main ()
- (get-stream
-  (car *args*)
-  #'json-parse
+ (print
+  (get-stream
+   (car *args*)
+   #'json-parse
+  )
  )
 )
 
