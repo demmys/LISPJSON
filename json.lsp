@@ -181,6 +181,21 @@
            )
           )
          )
+         (LBRACE
+          (let (
+                (members (json-parse-r in 'MEMBERS r))
+               )
+           (let (
+                 (rbrace (funcall next-token (cdr members)))
+                )
+            (if (equal (car rbrace) 'RBRACE)
+             (cons (car members) (cdr rbrace))
+             (error "Parse error: JSON Object does not end with \"}\"")
+            )
+           )
+          )
+         )
+         (t (error "Parse error: ~S is not a value" w))
         )
        )
       )
@@ -207,26 +222,82 @@
     )
    )
 
+   (PAIR
+    (let (
+          (string (funcall next-token queue))
+         )
+     (let (
+           (colon (funcall next-token (cdr string)))
+          )
+      (let (
+            (value (json-parse-r in 'VALUE (cdr colon)))
+           )
+       (if (and (stringp (car string)) (equal (car colon) 'COLON))
+        (cons (cons (car string) (car value)) (cdr value))
+        (error "Parse error: illegal pair in object.")
+       )
+      )
+     )
+    )
+   )
+
+   (MEMBERS
+    (let (
+          (pair (json-parse-r in 'PAIR queue))
+         )
+     (let (
+           (comma (funcall next-token (cdr pair)))
+          )
+      (if (equal (car comma) 'COMMA)
+       (let (
+             (members (json-parse-r in 'MEMBERS (cdr comma)))
+            )
+        (cons (cons (car pair) (car members)) (cdr members))
+       )
+       (cons (list (car pair)) comma)
+      )
+     )
+    )
+   )
+
   )
  )
 )
 
 (defun json-parse (in)
- (json-parse-r in 'JSON nil)
+ (if (stringp in)
+  (json-parse-r (make-string-input-stream in) 'JSON nil)
+  (json-parse-r in 'JSON nil)
+ )
 )
 
 
 
 #|
  |
- | Stream selector
+ | JSON
  |
  |#
-(defun get-stream (file callback)
- (if (null file)
-  (funcall callback *standard-input*)
-  (with-open-file (in file :direction :input)
-   (funcall callback in)
+(defun json-object-get (object key counter)
+ (if (equal counter (length object))
+  nil
+  (let (
+        (current (nth counter object))
+       )
+   (if (equal (car current) key)
+    (cdr current)
+    (json-object-get object key (1+ counter))
+   )
+  )
+ )
+)
+
+(defun json-get (array_object key)
+ (if (atom array_object)
+  (error "Can not get from value.")
+  (cond
+   ((numberp key) (nth key array_object))
+   ((stringp key) (json-object-get array_object key 0))
   )
  )
 )
@@ -235,16 +306,81 @@
 
 #|
  |
- | Main
+ | JSON printer
  |
  |#
-(defun main ()
- (print
-  (get-stream
-   (car *args*)
-   #'json-parse
+(defun json-pairs-print (pairs res)
+ (if (null pairs)
+  res
+  (let (
+        (pair (car pairs))
+       )
+   (json-pairs-print
+    (cdr pairs)
+    (format nil "~A~S: ~A~A"
+     res
+     (car pair)
+     (json-print-r (cdr pair))
+     (if (> (length pairs) 1) ", " " ")
+    )
+   )
   )
  )
 )
 
-(main)
+(defun json-elements-print (elements res)
+ (if (null elements)
+  res
+  (json-elements-print
+   (cdr elements)
+   (format nil "~A~A~A"
+    res
+    (json-print-r (car elements))
+    (if (> (length elements) 1) ", " " ")
+   )
+  )
+ )
+)
+
+(defun json-is-object (json counter)
+ (if (null json)
+  t
+  (let (
+        (pair (car json))
+       )
+   (if (listp pair)
+    (if (stringp (car pair))
+     (json-is-object (cdr json) (1+ counter))
+     nil
+    )
+    nil
+   )
+  )
+ )
+)
+
+(defun json-print-r (json)
+ (cond
+  ((numberp json) (format nil "~D" json))
+  ((stringp json) (format nil "~S" json))
+  ((listp json)
+   (if (json-is-object json 0)
+    (format nil "{ ~A}" (json-pairs-print json ""))
+    (format nil "[ ~A]" (json-elements-print json ""))
+   )
+  )
+  (t
+   (case json
+    (TRUE (format nil "~A" "true"))
+    (fALSE (format nil "~A" "false"))
+    (NULL (format nil "~A" "false"))
+    (t (error "This object is not a part of JSON format."))
+   )
+  )
+ )
+)
+
+(defun json-print (json)
+ (format t "~A~%" (json-print-r json))
+ json
+)
