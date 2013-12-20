@@ -129,88 +129,90 @@
 
 #|
  |
- | JSON
- |
- |#
-(defun json-object ()
- (list 'OBJECT)
-)
-(defun json-object-append (jobj key val)
- (cons 'OBJECT (acons key val (cdr jobj)))
-)
-
-(defun json-array ()
- (list 'ARRAY)
-)
-(defun json-array-append (jary val)
- (cons 'ARRAY (cons val (cdr jobj)))
-)
-
-(defun json-number (n)
- (list 'NUMBER n)
-)
-
-(defun json-string (s)
- (list 'STRING s)
-)
-
-(defun json-const (kind)
- (list kind)
-)
-
-
-
-#|
- |
  | Parser
  |
  |#
-(defun json-append (json key_val val_nil)
- (case (car json)
-  (OBJECT (json-object-append json key_val val_nil))
-  (ARRAY (json-array-append json key_val))
-  ; TODO statement of error
-  (t (error "Parse error: "))
- )
-)
-
-(defun json-parse-r (in state init res)
+(defun json-parse-r (in state queue)
  (let (
-       (token (if (null init) (json-lex in) init))
+       (next-token #'(lambda (queue) (if (null queue) (json-lex in) queue)))
       )
-  (let (
-        (w (car token))
-        (r (cdr token))
-       )
-   (case state
+  (case state
 
-    (INITIAL
-     (cond
-      ((numberp w) (json-parse-r in 'END r w))
-      ((stringp w) (json-parse-r in 'END r w))
-      (t (case w
-          (TRUE (json-parse-r in 'END r w))
-          (FALSE (json-parse-r in 'END r w))
-          (NULL (json-parse-r in 'END r w))
+   (JSON
+    (let (
+          (value (json-parse-r in 'VALUE nil))
          )
+     (let (
+           (end (car (funcall next-token (cdr value))))
+          )
+      (if (equal end 'EOF)
+       (car value)
+       (error "Parse error: illegal sequence of value in top level.")
       )
      )
     )
+   )
 
-    (END
-     (if (equal w 'EOF)
-      res
-      (error "Parse error: illegal sequence of value in top level.")
+   (VALUE
+    (let (
+          (token (funcall next-token queue))
+         )
+     (let (
+           (w (car token))
+           (r (cdr token))
+          )
+      (cond
+       ((numberp w) token)
+       ((stringp w) token)
+       (t
+        (case w
+         ((TRUE FALSE NULL) token)
+         (LBRACKET
+          (let (
+                (elements (json-parse-r in 'ELEMENTS r))
+               )
+           (let (
+                 (rbracket (funcall next-token (cdr elements)))
+                )
+            (if (equal (car rbracket) 'RBRACKET)
+             (cons (car elements) (cdr rbracket))
+             (error "Parse error: JSON Array does not end with \"]\"")
+            )
+           )
+          )
+         )
+        )
+       )
+      )
      )
     )
-
    )
+
+   (ELEMENTS
+    (let (
+          (value (json-parse-r in 'VALUE queue))
+         )
+     (let (
+           (comma (funcall next-token (cdr value)))
+          )
+      (if (equal (car comma) 'COMMA)
+       (let (
+             (elements (json-parse-r in 'ELEMENTS (cdr comma)))
+            )
+        (cons (cons (car value) (car elements)) (cdr elements))
+       )
+       (cons (list (car value)) comma)
+      )
+     )
+    )
+   )
+
   )
  )
 )
 
 (defun json-parse (in)
- (json-parse-r in 'INITIAL nil nil)
+ (json-parse-r in 'JSON nil)
 )
 
 
